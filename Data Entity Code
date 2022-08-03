@@ -1,0 +1,220 @@
+#Versatile ways to handle code-based changes that get queued during data management processes
+
+mapEntityToDataSource
+// This method is hitting while updating and inserting
+// we can assign datasource1 recid values to child data source.
+// 
+public void mapEntityToDataSource(DataEntityRuntimeContext _entityCtx, 
+                                DataEntityDataSourceRuntimeContext _dataSourceCtx)
+{
+if (_entityCtx.getDatabaseOperation() == DataEntityDatabaseOperation::Insert 
+    || _entityCtx.getDatabaseOperation() == DataEntityDatabaseOperation::Update)
+{
+    if (_dataSourceCtx.name() == dataEntityDataSourceStr(MyEntity, MyDataSource))
+    {
+
+        TestCustomer     testCustomer = _entityCtx.getRuntimeContextByName(
+                                            dataEntityDataSourceStr(MyEntity,
+                                                        TestCustomer)).getBuffer();
+
+        this.CustomerRecid = testCustomer.recid;
+    }
+}
+    super(_entityCtx, _dataSourceCtx);
+}
+-------------------------------------------------------------------------------------------------------------
+
+postGetStagingData 
+// After inserting into staging this method will trigger
+// Ref: LedgerJournalEntity
+public static void postGetStagingData(DMFDefinitionGroupExecution 
+                                _dmfDefinitionGroupExecution) 
+{
+MyStaging     staging;
+
+ttsbegin;
+
+while select forupdate staging
+    where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+        && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+        && staging.TransferStatus == DMFTransferStatus::NotStarted
+{
+    staging.Field1  = staging.Field2 + '-' + staging.Field3;
+    staging.Field4  = staging.Field5;
+    staging.update();
+} 
+
+    /*update_recordset staging
+        setting OperationalEntityId   = curExt()
+        where staging.DefinitionGroup   == _dmfDefinitionGroupExecution.DefinitionGroup
+           && staging.ExecutionId       == _dmfDefinitionGroupExecution.ExecutionId
+           && staging.TransferStatus    == DMFTransferStatus::NotStarted;*/
+
+
+ttscommit;
+}
+-------------------------------------------------------------------------------------------------------------
+
+postTargetProcess 
+//  Executes the logic once after processing the target data.
+
+public static void postTargetProcess(DMFDefinitionGroupExecution _dmfDefinitionGroupExecution)
+{
+
+    if (_dmfDefinitionGroupExecution.StagingStatus == DMFBatchJobStatus::Finished)
+    {
+       MyStaging     staging;
+
+       ttsbegin;
+
+       while select forupdate staging
+            where staging.DefinitionGroup == _dmfDefinitionGroupExecution.DefinitionGroup
+            && staging.ExecutionId == _dmfDefinitionGroupExecution.ExecutionId
+            && staging.TransferStatus == DMFTransferStatus::Completed
+    {
+        staging.Field1  = staging.Field2 + '-' + staging.Field3;
+        staging.Field4  = staging.Field5;
+        staging.update();
+    } 
+
+
+    /*update_recordset staging
+        setting OperationalEntityId   = curExt()
+        where staging.DefinitionGroup   == _dmfDefinitionGroupExecution.DefinitionGroup
+           && staging.ExecutionId       == _dmfDefinitionGroupExecution.ExecutionId
+           && staging.TransferStatus    == DMFTransferStatus::Completed;*/
+
+
+    ttscommit;
+}
+
+---------------------------------------------------------------------------------
+
+validateWrite
+// Validate the each line.
+// LedgerJournalEntity
+public boolean validateWrite()
+{
+boolean isValid = super();
+
+// Your logic
+
+return isValid;
+}
+-------------------------------------------------------------------------------------------------------------
+
+validateDelete 
+// Validate the each line.
+// LedgerJournalEntity
+public boolean validateDelete()
+{
+boolean isValid = super();
+
+// Your logic
+
+return isValid;
+}
+-------------------------------------------------------------------------------------------------------------
+
+persistEntity 
+//Skip validate field code written in this method
+//Reference : LogisticsPostalAddressElectronicContactV2Entity
+public void persistEntity(DataEntityRuntimeContext _entityCtx)
+{
+_entityCtx.getEntityRecord().skipDataSourceValidateField(
+                fieldNum(ElectronicContactsEntity, Location), true);
+    
+super(_entityCtx);
+}
+-------------------------------------------------------------------------------------------------------------
+
+initValue 
+// Assign default values
+// WE can assign number sequence also.
+// SMMContactPersonV2Entity
+public void initValue()
+{
+if (!this.skipNumberSequenceCheck())
+{
+    NumberSeqRecordFieldHandler::enableNumberSequenceControlForField(
+        this, fieldNum(PIDInvestigatorContactPersonEntity, ContactPersonId), 
+                                    ContactPerson::numRefContactPersonId());
+}
+
+this.ContactForParty = Parameters::find().ContactForParty;
+
+super();
+}
+-------------------------------------------------------------------------------------------------------------
+
+  initializeEntityDataSource
+// Assign values to some fields based on some field values.
+//Reference : LogisticsPostalAddressElectronicContactV2Entity
+public void initializeEntityDataSource(DataEntityRuntimeContext _entityCtx, 
+                                    DataEntityDataSourceRuntimeContext _dataSourceCtx)
+{
+    
+if (_dataSourceCtx.name() == dataEntityDataSourceStr(MyEntity, MyDataSource))
+{
+    ContactPerson       contactPerson = ContactPerson::find(this.contactPersonId);
+
+    if (this.LocationId == '')
+    {
+        DirPartyLocation    dirPartyLocation = DirPartyLocation::findOrCreate(
+                                                contactPerson.party, false);
+        LogisticsLocation   logisticsLocation = LogisticsLocation::find(
+                                                    dirPartyLocation.Location);
+        
+        this.LocationId = logisticsLocation.LocationId;
+        this.Location   = logisticsLocation.RecId;
+        this.Party      = contactPerson.party;
+
+        _dataSourceCtx.setBuffer(logisticsLocation);//set buffer
+    }
+}
+if (_dataSourceCtx.name() == dataEntityDataSourceStr(MyEntity, MyDataSource1))
+{
+    DirPartyLocation    dirPartyLocationNew = 
+        DirPartyLocation::findByPartyLocation(this.Party, this.Location);
+
+    _dataSourceCtx.setBuffer(dirPartyLocationNew);
+}
+    
+super(_entityCtx, _dataSourceCtx);
+}
+-------------------------------------------------------------------------------------------------------------
+
+insertEntityDataSource 
+// While inserting into target
+//Reference :InventOperationalSiteV2Entity
+public boolean insertEntityDataSource(DataEntityRuntimeContext _entityCtx, 
+                        DataEntityDataSourceRuntimeContext _dataSourceCtx)
+{
+    boolean ret;
+    
+    if (_dataSourceCtx.name() == 
+            dataEntityDataSourceStr(InventOperationalSiteV2Entity, ReqSitePolicy))
+    {
+        _dataSourceCtx.setDatabaseOperation(DataEntityDatabaseOperation::Insert);
+
+    }
+    
+    ret = super(_entityCtx, _dataSourceCtx);
+
+    return ret;
+
+}
+-------------------------------------------------------------------------------------------------------------
+
+    updateEntityDataSource:
+// While updating into target
+//Reference :InventOperationalSiteV2Entity
+public boolean updateEntityDataSource(DataEntityRuntimeContext _entityCtx, 
+                        DataEntityDataSourceRuntimeContext _dataSourceCtx)
+{
+    boolean ret;
+
+    ret = super(_entityCtx, _dataSourceCtx);
+
+    return ret;
+}
