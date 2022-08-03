@@ -1,2 +1,2 @@
 # D365FO_Resources
-Useful Code / Links
+Useful snippets / links related to FinOps development
